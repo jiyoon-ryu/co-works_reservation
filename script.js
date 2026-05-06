@@ -48,6 +48,7 @@ async function requestApi(path, options = {}) {
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
+      "ngrok-skip-browser-warning": "true",
       ...options.headers
     },
     ...options
