@@ -18,7 +18,12 @@ const pool = mysql.createPool({
   dateStrings: true
 });
 
-app.use(cors());
+app.use(cors({
+  origin: "*",
+  methods: ["GET", "POST", "DELETE", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "ngrok-skip-browser-warning"]
+}));
+app.options("*", cors());
 app.use(express.json());
 
 function toApiReservation(row) {
