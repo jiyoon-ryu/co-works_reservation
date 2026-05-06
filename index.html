@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <title>코웍스 회의실 공간예약</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <main class="app">
+
+    <section id="calendarPage" class="page active">
+      <div class="card">
+        <h1>코웍스 회의실 공간예약</h1>
+
+        <div class="month-header">
+          <button id="prevMonthBtn">‹</button>
+          <h2 id="monthTitle"></h2>
+          <button id="nextMonthBtn">›</button>
+        </div>
+
+        <div class="legend">
+          <span><b class="blue"></b>예약 없음</span>
+          <span><b class="green"></b>널널함</span>
+          <span><b class="orange"></b>절반 이상</span>
+          <span><b class="red"></b>마감</span>
+        </div>
+
+        <div class="calendar" id="calendar"></div>
+      </div>
+    </section>
+
+    <section id="timePage" class="page">
+      <div class="card wide">
+        <button class="back-btn" id="backBtn">← 달력으로</button>
+        <h1 id="selectedDateTitle">예약 현황</h1>
+
+        <div class="time-layout">
+          <div>
+            <h2>오전 AM</h2>
+            <div id="amBlocks" class="time-blocks"></div>
+          </div>
+
+          <div>
+            <h2>오후 PM</h2>
+            <div id="pmBlocks" class="time-blocks"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div id="modal" class="modal hidden">
+      <form id="reservationForm" class="modal-box">
+        <h2>예약하기</h2>
+
+        <p id="modalTimeText" class="selected-time"></p>
+
+        <label>학번</label>
+        <input id="studentId" type="text" placeholder="2023123456" required />
+
+        <label>취소 비밀번호</label>
+        <input id="cancelPassword" type="password" placeholder="예약 취소할 때 사용할 비밀번호" minlength="4" required />
+
+        <label>이름</label>
+        <input id="studentName" type="text" placeholder="홍길동" required />
+
+        <label>gmail 계정</label>
+        <div class="email-row">
+          <input id="emailId" type="text" placeholder="example" required />
+          <span>@gmail.com</span>
+        </div>
+
+        <label>이용 목적</label>
+        <textarea id="purpose" placeholder="이용 목적을 입력하세요" required></textarea>
+
+        <div class="btn-row">
+          <button type="button" id="cancelBtn" class="cancel">취소</button>
+          <button type="submit">확인</button>
+        </div>
+      </form>
+    </div>
+
+  </main>
+
+  <script src="script.js"></script>
+</body>
+</html>
