@@ -16,6 +16,9 @@ const reservationForm = document.getElementById("reservationForm");
 const modalTimeText = document.getElementById("modalTimeText");
 const cancelBtn = document.getElementById("cancelBtn");
 
+const API_BASE_URL = "https://entrench-backstab-coke.ngrok-free.dev";
+
+
 let today = new Date();
 let currentYear = today.getFullYear();
 let currentMonth = today.getMonth();
@@ -29,7 +32,7 @@ let dragMode = null;
 let dragStartHour = null;
 let dragEndHour = null;
 
-let reservations = JSON.parse(localStorage.getItem("reservations")) || [];
+let reservations = [];
 
 const amTimes = [
   "00:00", "01:00", "02:00", "03:00", "04:00", "05:00",
@@ -41,8 +44,35 @@ const pmTimes = [
   "18:00", "19:00", "20:00", "21:00", "22:00", "23:00"
 ];
 
-function saveReservations() {
-  localStorage.setItem("reservations", JSON.stringify(reservations));
+async function requestApi(path, options = {}) {
+  const response = await fetch(`${API_BASE_URL}${path}`, {
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers
+    },
+    ...options
+  });
+
+  const data = await response.json().catch(() => ({}));
+
+  if (!response.ok) {
+    throw new Error(data.message || "요청을 처리하지 못했습니다.");
+  }
+
+  return data;
+}
+
+async function loadReservations() {
+  reservations = await requestApi("/api/reservations");
+}
+
+async function refreshReservationViews() {
+  await loadReservations();
+  renderCalendar();
+
+  if (selectedDate) {
+    renderTimeBlocks();
+  }
 }
 
 function makeDateString(year, month, date) {
@@ -279,14 +309,30 @@ function getCancelCredentials() {
   };
 }
 
-function canCancelReservation(reservation, credentials) {
-  return (
-    reservation.studentId === credentials.studentId &&
-    reservation.cancelPassword === credentials.cancelPassword
-  );
+function getUniqueReservationsByHours(hours) {
+  return hours.reduce((items, hour) => {
+    const reservation = findReservationByHour(hour);
+
+    if (reservation && !items.some(item => item.id === reservation.id)) {
+      items.push(reservation);
+    }
+
+    return items;
+  }, []);
 }
 
-function cancelSelectedReservationHours() {
+function isFullReservationSelected(reservation, hours) {
+  const start = Number(reservation.time.slice(0, 2));
+  const end = Number(reservation.endTime.slice(0, 2));
+
+  for (let hour = start; hour < end; hour++) {
+    if (!hours.includes(hour)) return false;
+  }
+
+  return true;
+}
+
+async function cancelSelectedReservationHours() {
   const start = Math.min(dragStartHour, dragEndHour);
   const end = Math.max(dragStartHour, dragEndHour) + 1;
   const hours = [];
@@ -313,13 +359,13 @@ function cancelSelectedReservationHours() {
     return;
   }
 
-  const hasInvalidReservation = hours.some(hour => {
-    const reservation = findReservationByHour(hour);
-    return !reservation || !canCancelReservation(reservation, credentials);
-  });
+  const cancelReservations = getUniqueReservationsByHours(hours);
+  const hasPartiallySelectedReservation = cancelReservations.some(
+    reservation => !isFullReservationSelected(reservation, hours)
+  );
 
-  if (hasInvalidReservation) {
-    alert("학번 또는 취소 비밀번호가 일치하지 않아 예약을 취소할 수 없습니다.");
+  if (hasPartiallySelectedReservation) {
+    alert("DB 연결 버전에서는 예약된 시간 전체를 선택해야 취소할 수 있습니다.");
     clearSelectedBlocks();
     return;
   }
@@ -333,22 +379,21 @@ function cancelSelectedReservationHours() {
     return;
   }
 
-  hours.forEach(hour => {
-    const reservation = findReservationByHour(hour);
+  try {
+    await Promise.all(
+      cancelReservations.map(reservation =>
+        requestApi(`/api/reservations/${reservation.id}`, {
+          method: "DELETE",
+          body: JSON.stringify(credentials)
+        })
+      )
+    );
 
-    if (reservation) {
-      cancelReservationHour(reservation, hour);
-    }
-  });
-
-  reservations.sort((a, b) => {
-    if (a.date !== b.date) return a.date.localeCompare(b.date);
-    return a.time.localeCompare(b.time);
-  });
-
-  saveReservations();
-  renderCalendar();
-  renderTimeBlocks();
+    await refreshReservationViews();
+  } catch (error) {
+    alert(error.message);
+    clearSelectedBlocks();
+  }
 }
 
 function updateDragSelection() {
@@ -418,7 +463,7 @@ function openReservationModal() {
   modal.classList.remove("hidden");
 }
 
-reservationForm.addEventListener("submit", e => {
+reservationForm.addEventListener("submit", async e => {
   e.preventDefault();
 
   const studentId = document.getElementById("studentId").value.trim();
@@ -457,27 +502,31 @@ reservationForm.addEventListener("submit", e => {
     return;
   }
 
-  reservations.push({
-    date: selectedDate,
-    time: selectedStartTime,
-    endTime: selectedEndTime,
-    studentId,
-    cancelPassword,
-    name: studentName,
-    email: `${emailId}@gmail.com`,
-    purpose
-  });
+  try {
+    await requestApi("/api/reservations", {
+      method: "POST",
+      body: JSON.stringify({
+        date: selectedDate,
+        time: selectedStartTime,
+        endTime: selectedEndTime,
+        studentId,
+        cancelPassword,
+        name: studentName,
+        email: `${emailId}@gmail.com`,
+        purpose
+      })
+    });
 
-  saveReservations();
+    alert("예약이 완료되었습니다.");
 
-  alert("예약이 완료되었습니다.");
+    reservationForm.reset();
+    modal.classList.add("hidden");
+    clearSelectedBlocks();
 
-  reservationForm.reset();
-  modal.classList.add("hidden");
-  clearSelectedBlocks();
-
-  renderCalendar();
-  renderTimeBlocks();
+    await refreshReservationViews();
+  } catch (error) {
+    alert(error.message);
+  }
 });
 
 cancelBtn.addEventListener("click", () => {
@@ -519,4 +568,14 @@ document.addEventListener("mouseup", () => {
   }
 });
 
-renderCalendar();
+async function initializeApp() {
+  try {
+    await loadReservations();
+    renderCalendar();
+  } catch (error) {
+    alert(`예약 정보를 불러오지 못했습니다.\n\n${error.message}`);
+    renderCalendar();
+  }
+}
+
+initializeApp();
