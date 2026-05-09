@@ -5,7 +5,7 @@ import express from "express";
 import mysql from "mysql2/promise";
 
 const app = express();
-const port = process.env.PORT || 3000;
+const PORT = process.env.PORT || 3000;
 
 const pool = mysql.createPool({
   host: process.env.DB_HOST,
@@ -205,6 +205,6 @@ app.use((error, req, res, next) => {
   res.status(500).json({ message: "Internal server error." });
 });
 
-app.listen(port, () => {
-  console.log(`Server listening on http://localhost:${port}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });
