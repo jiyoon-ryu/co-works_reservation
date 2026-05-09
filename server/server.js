@@ -10,7 +10,6 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const clientRoot = path.resolve(__dirname, "..");
 
 const pool = mysql.createPool({
   host: process.env.MYSQLHOST || process.env.DB_HOST,
@@ -30,7 +29,7 @@ app.use(cors({
 }));
 app.options("*", cors());
 app.use(express.json());
-app.use(express.static(clientRoot));
+app.use(express.static(path.join(__dirname, "public")));
 
 function toApiReservation(row) {
   return {
