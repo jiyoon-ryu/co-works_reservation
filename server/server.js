@@ -3,9 +3,14 @@ import bcrypt from "bcryptjs";
 import cors from "cors";
 import express from "express";
 import mysql from "mysql2/promise";
+import path from "path";
+import { fileURLToPath } from "url";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const clientRoot = path.resolve(__dirname, "..");
 
 const pool = mysql.createPool({
   host: process.env.MYSQLHOST || process.env.DB_HOST,
@@ -25,6 +30,7 @@ app.use(cors({
 }));
 app.options("*", cors());
 app.use(express.json());
+app.use(express.static(clientRoot));
 
 function toApiReservation(row) {
   return {
