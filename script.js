@@ -17,7 +17,7 @@ const reservationForm = document.getElementById("reservationForm");
 const modalTimeText = document.getElementById("modalTimeText");
 const cancelBtn = document.getElementById("cancelBtn");
 
-const API_BASE_URL = "https://entrench-backstab-coke.ngrok-free.dev";
+const API_BASE_URL = "";
 
 
 let today = new Date();
