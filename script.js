@@ -4,6 +4,7 @@ const calendar = document.getElementById("calendar");
 const monthTitle = document.getElementById("monthTitle");
 
 const selectedDateTitle = document.getElementById("selectedDateTitle");
+const availableTimeSummary = document.getElementById("availableTimeSummary");
 const amBlocks = document.getElementById("amBlocks");
 const pmBlocks = document.getElementById("pmBlocks");
 
@@ -80,6 +81,14 @@ function makeDateString(year, month, date) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(date).padStart(2, "0")}`;
 }
 
+function getTodayString() {
+  return makeDateString(today.getFullYear(), today.getMonth(), today.getDate());
+}
+
+function isPastDate(dateStr) {
+  return dateStr < getTodayString();
+}
+
 function getReservedHours(dateStr) {
   return reservations
     .filter(r => r.date === dateStr)
@@ -97,6 +106,16 @@ function getDateStatus(dateStr) {
   if (reservedHours < 12) return "low-day";
   if (reservedHours < 24) return "mid-day";
   return "full-day";
+}
+
+function updateAvailableTimeSummary() {
+  if (!availableTimeSummary || !selectedDate) return;
+
+  const reservedHours = getReservedHours(selectedDate);
+  const availableHours = Math.max(0, 24 - reservedHours);
+
+  availableTimeSummary.textContent =
+    `예약 가능 시간 ${availableHours}시간 / 전체 24시간`;
 }
 
 function maskName(name) {
@@ -133,17 +152,22 @@ function renderCalendar() {
     const dateStr = makeDateString(currentYear, currentMonth, date);
     const reservedHours = getReservedHours(dateStr);
 
-    const div = document.createElement("div");
-    div.className = `date-cell ${getDateStatus(dateStr)}`;
-
     const todayStr = makeDateString(
       today.getFullYear(),
       today.getMonth(),
       today.getDate()
     );
+    const pastDate = isPastDate(dateStr);
+
+    const div = document.createElement("div");
+    div.className = `date-cell ${getDateStatus(dateStr)}`;
 
     if (dateStr === todayStr) {
       div.classList.add("today");
+    }
+
+    if (pastDate) {
+      div.classList.add("past");
     }
 
     div.innerHTML = `
@@ -152,10 +176,12 @@ function renderCalendar() {
       <span class="date-status-dot"></span>
     `;
 
-    div.addEventListener("click", () => {
-      selectedDate = dateStr;
-      showTimePage();
-    });
+    if (!pastDate) {
+      div.addEventListener("click", () => {
+        selectedDate = dateStr;
+        showTimePage();
+      });
+    }
 
     calendar.appendChild(div);
   }
@@ -166,12 +192,14 @@ function showTimePage() {
   timePage.classList.add("active");
 
   selectedDateTitle.textContent = `${selectedDate} 예약 현황`;
+  updateAvailableTimeSummary();
   renderTimeBlocks();
 }
 
 function renderTimeBlocks() {
   amBlocks.innerHTML = "";
   pmBlocks.innerHTML = "";
+  updateAvailableTimeSummary();
 
   amTimes.forEach(time => {
     amBlocks.appendChild(createTimeBlock(time));
@@ -435,6 +463,12 @@ function clearSelectedBlocks() {
 function openReservationModal() {
   const start = Math.min(dragStartHour, dragEndHour);
   const end = Math.max(dragStartHour, dragEndHour) + 1;
+
+  if (isPastDate(selectedDate)) {
+    alert("오늘 이전 날짜는 예약할 수 없습니다.");
+    clearSelectedBlocks();
+    return;
+  }
 
   if (end - start > 6) {
     alert("최대 6시간까지만 예약할 수 있습니다.");
