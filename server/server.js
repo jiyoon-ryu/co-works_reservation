@@ -5,6 +5,13 @@ import express from "express";
 import mysql from "mysql2/promise";
 import path from "path";
 import { fileURLToPath } from "url";
+import {
+  deleteReservationCalendarEvent,
+  ensureReservationCalendarEvent,
+  exchangeGoogleAuthorizationCode,
+  getGoogleAuthorizationUrl,
+  isGoogleCalendarConfigured
+} from "./googleCalendar.js";
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -59,6 +66,141 @@ function getRequiredFields(body) {
   ].filter(field => !String(body[field] || "").trim());
 }
 
+function getCalendarErrorMessage(error) {
+  return String(
+    error?.response?.data?.error?.message ||
+      error?.message ||
+      "Google Calendar 동기화 실패"
+  ).slice(0, 1000);
+}
+
+async function getReservationById(id) {
+  const [rows] = await pool.query(
+    "SELECT * FROM reservations WHERE id = ?",
+    [id]
+  );
+
+  return rows[0] || null;
+}
+
+async function markCalendarSyncFailure(id, syncStatus, error) {
+  await pool.query(
+    `UPDATE reservations
+     SET calendar_sync_status = ?,
+         calendar_last_error = ?,
+         calendar_sync_attempts = calendar_sync_attempts + 1
+     WHERE id = ?`,
+    [syncStatus, getCalendarErrorMessage(error), id]
+  );
+}
+
+async function synchronizeReservationCalendar(reservationId) {
+  const reservation = await getReservationById(reservationId);
+
+  if (!reservation) {
+    return { ok: true, skipped: true };
+  }
+
+  if (reservation.reservation_status === "active") {
+    try {
+      const googleEventId =
+        await ensureReservationCalendarEvent(reservation);
+
+      await pool.query(
+        `UPDATE reservations
+         SET google_event_id = ?,
+             calendar_sync_status = 'confirmed',
+             calendar_last_error = NULL,
+             calendar_sync_attempts = calendar_sync_attempts + 1
+         WHERE id = ?
+           AND reservation_status = 'active'`,
+        [googleEventId, reservation.id]
+      );
+
+      return {
+        ok: true,
+        googleEventId
+      };
+    } catch (error) {
+      await markCalendarSyncFailure(
+        reservation.id,
+        "create_failed",
+        error
+      );
+
+      return {
+        ok: false,
+        error
+      };
+    }
+  }
+
+  if (reservation.reservation_status === "cancelling") {
+    try {
+      await deleteReservationCalendarEvent(reservation);
+
+      await pool.query(
+        `UPDATE reservations
+         SET reservation_status = 'cancelled',
+             calendar_sync_status = 'deleted',
+             calendar_last_error = NULL,
+             calendar_sync_attempts = calendar_sync_attempts + 1
+         WHERE id = ?`,
+        [reservation.id]
+      );
+
+      return { ok: true };
+    } catch (error) {
+      await markCalendarSyncFailure(
+        reservation.id,
+        "delete_failed",
+        error
+      );
+
+      return {
+        ok: false,
+        error
+      };
+    }
+  }
+
+  return { ok: true, skipped: true };
+}
+
+async function retryFailedCalendarSynchronizations() {
+  if (!isGoogleCalendarConfigured()) {
+    return;
+  }
+
+  const [rows] = await pool.query(
+    `SELECT id
+     FROM reservations
+     WHERE
+       (
+         reservation_status = 'active'
+         AND calendar_sync_status IN ('pending_create', 'create_failed')
+       )
+       OR
+       (
+         reservation_status = 'cancelling'
+         AND calendar_sync_status IN ('pending_delete', 'delete_failed')
+       )
+     ORDER BY id
+     LIMIT 30`
+  );
+
+  for (const row of rows) {
+    try {
+      await synchronizeReservationCalendar(row.id);
+    } catch (error) {
+      console.error(
+        `Calendar sync retry failed for reservation ${row.id}:`,
+        error
+      );
+    }
+  }
+}
+
 app.get("/api/health", async (req, res) => {
   try {
     await pool.query("SELECT 1");
@@ -80,12 +222,16 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/reservations", async (req, res) => {
   const { date } = req.query;
   const params = [];
-  let sql = "SELECT * FROM reservations";
+  let sql = `
+  SELECT *
+  FROM reservations
+  WHERE reservation_status <> 'cancelled'
+`;
 
-  if (date) {
-    sql += " WHERE date = ?";
-    params.push(date);
-  }
+if (date) {
+  sql += " AND date = ?";
+  params.push(date);
+}
 
   sql += " ORDER BY date, time";
 
@@ -168,18 +314,50 @@ app.post("/api/reservations", async (req, res) => {
 
   const [result] = await pool.query(
     `INSERT INTO reservations
-      (date, time, end_time, student_id, cancel_password_hash, name, email, purpose)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-    [date, time, endTime, studentId, cancelPasswordHash, name, email, purpose]
+      (
+        date,
+        time, 
+        end_time, 
+        student_id, 
+        cancel_password_hash, 
+        name, 
+        email, 
+        purpose,
+        reservation_status,
+        calendar_sync_status
+      )
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active', 'pending_create')`,
+    [
+      date, 
+      time, 
+      endTime, 
+      studentId, 
+      cancelPasswordHash, 
+      name, 
+      email, 
+      purpose
+    ]
   );
 
-  const [rows] = await pool.query(
-    "SELECT * FROM reservations WHERE id = ?",
-    [result.insertId]
-  );
+  let calendarSynced = false;
 
-  res.status(201).json(toApiReservation(rows[0]));
-});
+  if (isGoogleCalendarConfigured()) {
+    const syncResult = await synchronizeReservationCalendar(result.insertId);
+    calendarSynced = syncResult.ok;
+  } else {
+    await markCalendarSyncFailure(
+      result.insertId,
+      "create_failed",
+      new Error("Google Calendar가 아직 연결되지 않았습니다.")
+    );
+  }
+
+  const reservation = await getReservationById(result.insertId);
+
+  res.status(calendarSynced ? 201 : 202).json({
+    ...toApiReservation(reservation),
+    calendarSynced
+  });
 
 app.delete("/api/reservations/:id", async (req, res) => {
   const { studentId, cancelPassword } = req.body;
@@ -210,9 +388,34 @@ app.delete("/api/reservations/:id", async (req, res) => {
     return;
   }
 
-  await pool.query("DELETE FROM reservations WHERE id = ?", [req.params.id]);
+  await pool.query(
+  `UPDATE reservations
+   SET reservation_status = 'cancelling',
+       calendar_sync_status = 'pending_delete',
+       calendar_last_error = NULL
+   WHERE id = ?`,
+  [reservation.id]
+);
 
-  res.json({ ok: true });
+let calendarSynced = false;
+
+if (isGoogleCalendarConfigured()) {
+  const syncResult = await synchronizeReservationCalendar(reservation.id);
+  calendarSynced = syncResult.ok;
+} else {
+  await markCalendarSyncFailure(
+    reservation.id,
+    "delete_failed",
+    new Error("Google Calendar가 아직 연결되지 않았습니다.")
+  );
+}
+
+res.status(calendarSynced ? 200 : 202).json({
+  ok: true,
+  calendarSynced,
+  message: calendarSynced
+    ? "예약이 취소되었습니다."
+    : "취소 요청은 저장되었습니다. Google Calendar 반영은 자동 재시도됩니다."
 });
 
 app.use((error, req, res, next) => {
