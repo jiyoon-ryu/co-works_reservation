@@ -282,6 +282,18 @@ h1 {
   color: #111827;
 }
 
+.time-block.disabled {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+  color: #9ca3af;
+  cursor: not-allowed;
+}
+
+.time-block.disabled:hover {
+  background: #f3f4f6;
+  border-color: #d1d5db;
+}
+
 .modal {
   position: fixed;
   inset: 0;

@@ -116,10 +116,11 @@ app.post("/api/reservations", async (req, res) => {
   } = req.body;
 
   const now = new Date();
-  const today = now.toISOString().slice(0, 10);
-  const reservationStart = new Date(`${date}T${time}:00`);
+  const [year, month, day] = date.split("-").map(Number);
+  const reservationStart = new Date(year, month - 1, day, Number(time.slice(0, 2)), Number(time.slice(3, 5)), 0, 0);
+  const isSameLocalDay = now.getFullYear() === year && now.getMonth() === month - 1 && now.getDate() === day;
 
-  if (date === today && reservationStart < now) {
+  if (isSameLocalDay && reservationStart <= now) {
     res.status(400).json({ message: "Cannot reserve a time that has already passed today." });
     return;
   }

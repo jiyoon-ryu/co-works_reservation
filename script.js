@@ -238,6 +238,15 @@ function createTimeBlock(time) {
     return button;
   }
 
+  const disabled = isPastTimeBlock(time);
+
+  if (disabled) {
+    button.classList.add("disabled");
+    button.textContent = `${time} 지난 시간`;
+    button.disabled = true;
+    return button;
+  }
+
   button.textContent = `${time} 예약 가능`;
 
   button.addEventListener("mousedown", () => {
@@ -264,6 +273,20 @@ function findReservationByHour(hour) {
 
     return hour >= start && hour < end;
   });
+}
+
+function isPastTimeBlock(time) {
+  if (!selectedDate) return false;
+
+  const todayStr = getTodayString();
+  if (selectedDate !== todayStr) return false;
+
+  const now = new Date();
+  const hour = Number(time.slice(0, 2));
+
+  if (hour < now.getHours()) return true;
+  if (hour === now.getHours() && now.getMinutes() > 0) return true;
+  return false;
 }
 
 function startDrag(hour, mode) {
