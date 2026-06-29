@@ -1,3 +1,26 @@
+import { initializeApp as initializeFirebaseApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
+import {
+  collection,
+  doc,
+  getDocs,
+  getFirestore,
+  runTransaction,
+  serverTimestamp
+} from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyAGnd4rPDvFcBd-RNYSPHj7djKndnsR2rM",
+  authDomain: "co-works-reservation-system.firebaseapp.com",
+  projectId: "co-works-reservation-system",
+  storageBucket: "co-works-reservation-system.firebasestorage.app",
+  messagingSenderId: "930423603530",
+  appId: "1:930423603530:web:035571e20cc0af2c6b41b3",
+  measurementId: "G-YL5DRYZR2M"
+};
+
+const firebaseApp = initializeFirebaseApp(firebaseConfig);
+const db = getFirestore(firebaseApp);
+
 const calendarPage = document.getElementById("calendarPage");
 const timePage = document.getElementById("timePage");
 const calendar = document.getElementById("calendar");
@@ -16,9 +39,6 @@ const modal = document.getElementById("modal");
 const reservationForm = document.getElementById("reservationForm");
 const modalTimeText = document.getElementById("modalTimeText");
 const cancelBtn = document.getElementById("cancelBtn");
-
-const API_BASE_URL = "";
-
 
 let today = new Date();
 let currentYear = today.getFullYear();
@@ -46,6 +66,7 @@ const pmTimes = [
 ];
 
 async function requestApi(path, options = {}) {
+  throw new Error("Legacy API is disabled. Firestore is used directly.");
   const response = await fetch(`${API_BASE_URL}${path}`, {
     headers: {
       "Content-Type": "application/json",
@@ -65,7 +86,11 @@ async function requestApi(path, options = {}) {
 }
 
 async function loadReservations() {
-  reservations = await requestApi("/api/reservations");
+  const snapshot = await getDocs(collection(db, "reservations"));
+
+  reservations = snapshot.docs
+    .map(toReservation)
+    .sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time));
 }
 
 async function refreshReservationViews() {
@@ -79,6 +104,97 @@ async function refreshReservationViews() {
 
 function makeDateString(year, month, date) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(date).padStart(2, "0")}`;
+}
+
+function toReservation(snapshot) {
+  const data = snapshot.data();
+
+  return {
+    id: snapshot.id,
+    date: data.date,
+    time: data.time,
+    endTime: data.endTime,
+    studentId: data.studentId,
+    name: data.name,
+    email: data.email,
+    purpose: data.purpose,
+    passwordHash: data.passwordHash,
+    createdAt: data.createdAt
+  };
+}
+
+async function hashPassword(password) {
+  const bytes = new TextEncoder().encode(password);
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+
+  return [...new Uint8Array(digest)]
+    .map(byte => byte.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+function getSlotId(date, hour) {
+  return `${date}_${String(hour).padStart(2, "0")}`;
+}
+
+async function createReservation(data) {
+  const start = Number(data.time.slice(0, 2));
+  const end = Number(data.endTime.slice(0, 2));
+  const reservationRef = doc(collection(db, "reservations"));
+  const slotRefs = [];
+
+  for (let hour = start; hour < end; hour++) {
+    slotRefs.push(doc(db, "reservationSlots", getSlotId(data.date, hour)));
+  }
+
+  await runTransaction(db, async transaction => {
+    for (const slotRef of slotRefs) {
+      const slotSnapshot = await transaction.get(slotRef);
+
+      if (slotSnapshot.exists()) {
+        throw new Error("?대? ?덉빟???쒓컙???ы븿?섏뼱 ?덉뒿?덈떎.");
+      }
+    }
+
+    transaction.set(reservationRef, {
+      ...data,
+      createdAt: serverTimestamp()
+    });
+
+    slotRefs.forEach(slotRef => {
+      transaction.set(slotRef, {
+        reservationId: reservationRef.id,
+        date: data.date
+      });
+    });
+  });
+}
+
+async function deleteReservation(reservation, credentials) {
+  const passwordHash = await hashPassword(credentials.cancelPassword);
+  const reservationRef = doc(db, "reservations", reservation.id);
+
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(reservationRef);
+
+    if (!snapshot.exists()) {
+      throw new Error("Reservation not found.");
+    }
+
+    const data = snapshot.data();
+
+    if (data.studentId !== credentials.studentId || data.passwordHash !== passwordHash) {
+      throw new Error("Student ID or cancel password does not match.");
+    }
+
+    const start = Number(data.time.slice(0, 2));
+    const end = Number(data.endTime.slice(0, 2));
+
+    transaction.delete(reservationRef);
+
+    for (let hour = start; hour < end; hour++) {
+      transaction.delete(doc(db, "reservationSlots", getSlotId(data.date, hour)));
+    }
+  });
 }
 
 function getTodayString() {
@@ -433,12 +549,7 @@ async function cancelSelectedReservationHours() {
 
   try {
     await Promise.all(
-      cancelReservations.map(reservation =>
-        requestApi(`/api/reservations/${reservation.id}`, {
-          method: "DELETE",
-          body: JSON.stringify(credentials)
-        })
-      )
+      cancelReservations.map(reservation => deleteReservation(reservation, credentials))
     );
 
     await refreshReservationViews();
@@ -568,18 +679,15 @@ reservationForm.addEventListener("submit", async e => {
   }
 
   try {
-    await requestApi("/api/reservations", {
-      method: "POST",
-      body: JSON.stringify({
-        date: selectedDate,
-        time: selectedStartTime,
-        endTime: selectedEndTime,
-        studentId,
-        cancelPassword,
-        name: studentName,
-        email: `${emailId}@gmail.com`,
-        purpose
-      })
+    await createReservation({
+      date: selectedDate,
+      time: selectedStartTime,
+      endTime: selectedEndTime,
+      studentId,
+      passwordHash: await hashPassword(cancelPassword),
+      name: studentName,
+      email: `${emailId}@gmail.com`,
+      purpose
     });
 
     alert("예약이 완료되었습니다.");
