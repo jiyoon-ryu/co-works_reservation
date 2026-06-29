@@ -468,8 +468,9 @@ function updateDragSelection() {
   document.querySelectorAll(".time-block").forEach(block => {
     const hour = Number(block.dataset.hour);
     const isReserved = block.classList.contains("reserved");
+    const isDisabled = block.classList.contains("disabled");
     const isSelectable =
-      dragMode === "cancel" ? isReserved : !isReserved;
+      dragMode === "cancel" ? isReserved : !isReserved && !isDisabled;
 
     if (hour >= start && hour < end && isSelectable) {
       block.classList.add("selected");
@@ -516,6 +517,12 @@ function openReservationModal() {
 
   selectedStartTime = `${String(start).padStart(2, "0")}:00`;
   selectedEndTime = `${String(end).padStart(2, "0")}:00`;
+
+  if (selectedDate === getTodayString() && isPastTimeBlock(selectedStartTime)) {
+    alert("현재 시간 이전의 예약은 할 수 없습니다.");
+    clearSelectedBlocks();
+    return;
+  }
 
   modalTimeText.textContent = `${selectedDate} ${selectedStartTime} ~ ${selectedEndTime}`;
   modal.classList.remove("hidden");
