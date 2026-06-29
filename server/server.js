@@ -418,6 +418,58 @@ res.status(calendarSynced ? 200 : 202).json({
     : "취소 요청은 저장되었습니다. Google Calendar 반영은 자동 재시도됩니다."
 });
 
+app.get("/admin/google/connect", (req, res) => {
+  const setupKey = String(req.query.key || "");
+
+  if (
+    !process.env.GOOGLE_SETUP_KEY ||
+    setupKey !== process.env.GOOGLE_SETUP_KEY
+  ) {
+    res.status(403).send("Google Calendar 연결 권한이 없습니다.");
+    return;
+  }
+
+  res.redirect(getGoogleAuthorizationUrl(setupKey));
+});
+  
+app.get("/admin/google/callback", async (req, res, next) => {
+  try {
+    const state = String(req.query.state || "");
+    const code = String(req.query.code || "");
+
+    if (
+      !process.env.GOOGLE_SETUP_KEY ||
+      state !== process.env.GOOGLE_SETUP_KEY
+    ) {
+      res.status(403).send("Google OAuth state 검증에 실패했습니다.");
+      return;
+    }
+
+    if (!code) {
+      res.status(400).send("Google authorization code가 없습니다.");
+      return;
+    }
+
+    const { managerEmail, refreshToken } =
+      await exchangeGoogleAuthorizationCode(code);
+
+    res.type("text/plain").send(
+`Google Calendar 연결 완료
+
+연결된 관리자 계정: ${managerEmail}
+
+아래 값을 서버 환경변수에 저장하세요.
+
+GOOGLE_REFRESH_TOKEN=${refreshToken}
+
+저장 후 서버를 재시작하세요.`
+    );
+  } catch (error) {
+    next(error);
+  }
+});
+
+  
 app.use((error, req, res, next) => {
   console.error(error);
   res.status(500).json({ message: "Internal server error." });
@@ -425,4 +477,20 @@ app.use((error, req, res, next) => {
 
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`Server running on port ${PORT}`);
+
+  if (isGoogleCalendarConfigured()) {
+    console.log("Google Calendar synchronization is enabled.");
+
+    retryFailedCalendarSynchronizations().catch(error => {
+      console.error("Initial Calendar sync retry failed:", error);
+    });
+  } else {
+    console.log("Google Calendar is not connected yet.");
+  }
 });
+
+setInterval(() => {
+  retryFailedCalendarSynchronizations().catch(error => {
+    console.error("Calendar retry worker failed:", error);
+  });
+}, 5 * 60 * 1000).unref();
