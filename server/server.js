@@ -115,6 +115,15 @@ app.post("/api/reservations", async (req, res) => {
     purpose
   } = req.body;
 
+  const now = new Date();
+  const today = now.toISOString().slice(0, 10);
+  const reservationStart = new Date(`${date}T${time}:00`);
+
+  if (date === today && reservationStart < now) {
+    res.status(400).json({ message: "Cannot reserve a time that has already passed today." });
+    return;
+  }
+
   const startHour = Number(time.slice(0, 2));
   const endHour = Number(endTime.slice(0, 2));
   const requestedHours = endHour - startHour;
