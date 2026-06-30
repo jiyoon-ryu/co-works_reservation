@@ -7,7 +7,7 @@
 
 ## 배포 링크
 
-- https://co-worksreservation-production.up.railway.app/
+- https://co-works-reservation-system.web.app/
 
 ---
 
