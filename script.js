@@ -169,30 +169,139 @@ async function createReservation(data) {
   });
 }
 
-async function deleteReservation(reservation, credentials) {
+async function cancelReservationsBySelectedHours(
+  reservationsToCancel,
+  selectedHours,
+  credentials
+) {
   const passwordHash = await hashPassword(credentials.cancelPassword);
-  const reservationRef = doc(db, "reservations", reservation.id);
+  const selectedHourSet = new Set(selectedHours);
+
+  const reservationRefs = reservationsToCancel.map(reservation =>
+    doc(db, "reservations", reservation.id)
+  );
 
   await runTransaction(db, async transaction => {
-    const snapshot = await transaction.get(reservationRef);
+    // 1. 취소하려는 기존 예약과 각 시간 슬롯을 먼저 읽는다.
+    const reservationSnapshots = await Promise.all(
+      reservationRefs.map(reservationRef => transaction.get(reservationRef))
+    );
 
-    if (!snapshot.exists()) {
-      throw new Error("Reservation not found.");
+    const plans = reservationSnapshots.map(snapshot => {
+      if (!snapshot.exists()) {
+        throw new Error("예약을 찾을 수 없습니다.");
+      }
+
+      const data = snapshot.data();
+
+      if (
+        data.studentId !== credentials.studentId ||
+        data.passwordHash !== passwordHash
+      ) {
+        throw new Error("학번 또는 취소 비밀번호가 일치하지 않습니다.");
+      }
+
+      const start = Number(data.time.slice(0, 2));
+      const end = Number(data.endTime.slice(0, 2));
+
+      const slotRefs = [];
+      const remainingSegments = [];
+      let segmentStart = null;
+
+      for (let hour = start; hour < end; hour++) {
+        slotRefs.push(
+          doc(db, "reservationSlots", getSlotId(data.date, hour))
+        );
+
+        const isCancelled = selectedHourSet.has(hour);
+
+        // 취소되지 않은 구간의 시작
+        if (!isCancelled && segmentStart === null) {
+          segmentStart = hour;
+        }
+
+        // 취소 구간을 만나거나, 예약의 마지막 시간에 도달하면 구간 저장
+        if (
+          segmentStart !== null &&
+          (isCancelled || hour === end - 1)
+        ) {
+          remainingSegments.push({
+            start: segmentStart,
+            end: isCancelled ? hour : hour + 1
+          });
+
+          segmentStart = null;
+        }
+      }
+
+      return {
+        reservationRef: snapshot.ref,
+        reservationId: snapshot.id,
+        data,
+        slotRefs,
+        remainingSegments
+      };
+    });
+
+    const allSlotRefs = plans.flatMap(plan => plan.slotRefs);
+
+    const slotSnapshots = await Promise.all(
+      allSlotRefs.map(slotRef => transaction.get(slotRef))
+    );
+
+    let slotIndex = 0;
+
+    for (const plan of plans) {
+      for (const slotRef of plan.slotRefs) {
+        const slotSnapshot = slotSnapshots[slotIndex++];
+
+        if (
+          !slotSnapshot.exists() ||
+          slotSnapshot.data().reservationId !== plan.reservationId
+        ) {
+          throw new Error(
+            "예약 정보가 변경되었습니다. 새로고침 후 다시 시도해 주세요."
+          );
+        }
+      }
     }
 
-    const data = snapshot.data();
+    // 2. 기존 예약과 기존 시간 슬롯을 삭제한다.
+    for (const plan of plans) {
+      transaction.delete(plan.reservationRef);
 
-    if (data.studentId !== credentials.studentId || data.passwordHash !== passwordHash) {
-      throw new Error("Student ID or cancel password does not match.");
+      for (const slotRef of plan.slotRefs) {
+        transaction.delete(slotRef);
+      }
     }
 
-    const start = Number(data.time.slice(0, 2));
-    const end = Number(data.endTime.slice(0, 2));
+    // 3. 취소되지 않은 시간대만 새 예약으로 다시 만든다.
+    for (const plan of plans) {
+      for (const segment of plan.remainingSegments) {
+        const newReservationRef = doc(collection(db, "reservations"));
 
-    transaction.delete(reservationRef);
+        transaction.set(newReservationRef, {
+          ...plan.data,
+          time: makeHourTime(segment.start),
+          endTime: makeHourTime(segment.end),
+          createdAt: serverTimestamp(),
+          splitFrom: plan.reservationId
+        });
 
-    for (let hour = start; hour < end; hour++) {
-      transaction.delete(doc(db, "reservationSlots", getSlotId(data.date, hour)));
+        for (let hour = segment.start; hour < segment.end; hour++) {
+          transaction.set(
+            doc(
+              db,
+              "reservationSlots",
+              getSlotId(plan.data.date, hour)
+            ),
+            {
+              reservationId: newReservationRef.id,
+              date: plan.data.date
+            }
+          );
+        }
+      }
     }
   });
 }
@@ -489,17 +598,6 @@ function getUniqueReservationsByHours(hours) {
   }, []);
 }
 
-function isFullReservationSelected(reservation, hours) {
-  const start = Number(reservation.time.slice(0, 2));
-  const end = Number(reservation.endTime.slice(0, 2));
-
-  for (let hour = start; hour < end; hour++) {
-    if (!hours.includes(hour)) return false;
-  }
-
-  return true;
-}
-
 async function cancelSelectedReservationHours() {
   const start = Math.min(dragStartHour, dragEndHour);
   const end = Math.max(dragStartHour, dragEndHour) + 1;
@@ -528,15 +626,6 @@ async function cancelSelectedReservationHours() {
   }
 
   const cancelReservations = getUniqueReservationsByHours(hours);
-  const hasPartiallySelectedReservation = cancelReservations.some(
-    reservation => !isFullReservationSelected(reservation, hours)
-  );
-
-  if (hasPartiallySelectedReservation) {
-    alert("DB 연결 버전에서는 예약된 시간 전체를 선택해야 취소할 수 있습니다.");
-    clearSelectedBlocks();
-    return;
-  }
 
   const ok = confirm(
     `선택한 ${hours.length}시간 예약을 취소할까요?\n\n${timeText}`
@@ -548,10 +637,12 @@ async function cancelSelectedReservationHours() {
   }
 
   try {
-    await Promise.all(
-      cancelReservations.map(reservation => deleteReservation(reservation, credentials))
+    await cancelReservationsBySelectedHours(
+      cancelReservations,
+      hours,
+      credentials
     );
-
+    
     await refreshReservationViews();
   } catch (error) {
     alert(error.message);
