@@ -52,7 +52,7 @@ let isDragging = false;
 let dragMode = null;
 let dragStartHour = null;
 let dragEndHour = null;
-let activePointerId = null;
+let suppressMouseUntil = 0;
 
 let reservations = [];
 
@@ -445,44 +445,54 @@ function createTimeBlock(time) {
   button.type = "button";
 
   const reservation = findReservationByHour(hour);
+  const mode = reservation ? "cancel" : "reserve";
 
   if (reservation) {
     button.classList.add("reserved");
     button.textContent = `${time} 예약됨 / ${maskName(reservation.name)}`;
+  } else {
+    const disabled = isPastTimeBlock(time);
 
-    button.addEventListener("pointerdown", e => {
-      if (e.pointerType === "mouse" && e.button !== 0) return;
+    if (disabled) {
+      button.classList.add("disabled");
+      button.textContent = `${time} 지난 시간`;
+      button.disabled = true;
+      return button;
+    }
+
+    button.textContent = `${time} 예약 가능`;
+  }
+
+  // PC 드래그 시작
+  button.addEventListener("mousedown", e => {
+    if (Date.now() < suppressMouseUntil) return;
+    if (e.button !== 0) return;
+
+    e.preventDefault();
+    startDrag(hour, mode);
+  });
+
+  // PC에서 다른 블록으로 드래그
+  button.addEventListener("mouseenter", () => {
+    if (isDragging && Date.now() >= suppressMouseUntil) {
+      continueDrag(hour);
+    }
+  });
+
+  // 모바일에서 손가락을 누르면 드래그 시작
+  button.addEventListener(
+    "touchstart",
+    e => {
+      if (e.touches.length !== 1) return;
 
       e.preventDefault();
 
-      activePointerId = e.pointerId;
+      suppressMouseUntil = Date.now() + 800;
 
-      startDrag(hour, "cancel");
-    });
-
-    return button;
-  }
-
-  const disabled = isPastTimeBlock(time);
-
-  if (disabled) {
-    button.classList.add("disabled");
-    button.textContent = `${time} 지난 시간`;
-    button.disabled = true;
-    return button;
-  }
-
-  button.textContent = `${time} 예약 가능`;
-
-  button.addEventListener("pointerdown", e => {
-    if (e.pointerType === "mouse" && e.button !== 0) return;
-
-    e.preventDefault();
-
-    activePointerId = e.pointerId;
-
-    startDrag(hour, "reserve");
-  });
+      startDrag(hour, mode);
+    },
+    { passive: false }
+  );
 
   return button;
 }
@@ -824,79 +834,101 @@ nextMonthBtn.addEventListener("click", () => {
   renderCalendar();
 });
 
-document.addEventListener(
-  "pointermove",
-  e => {
-    if (!isDragging) return;
+// ================================
+// PC 드래그 종료
+// ================================
 
-    e.preventDefault();
+document.addEventListener("mouseup", () => {
+  if (!isDragging) return;
 
-    const element = document.elementFromPoint(
-      e.clientX,
-      e.clientY
-    );
+  // 모바일 터치 직후 발생하는 가짜 mouse 이벤트 무시
+  if (Date.now() < suppressMouseUntil) return;
 
-    const block = element?.closest(".time-block");
+  finishDrag();
+});
 
-    if(!block) return;
 
-    const hour = Number(block.dataset.hour);
+// ================================
+// 모바일에서 현재 손가락 위치의 시간 블록 찾기
+// ================================
 
-    if(Number.isNaN(hour)) return;
+function getTouchTimeBlock(x, y) {
+  // 손가락 바로 아래에 실제 블록이 있는지 먼저 확인
+  const directElement = document.elementFromPoint(x, y);
+  const directBlock = directElement?.closest(".time-block");
 
-    continueDrag(hour);
-  },
-  { passive: false }
-);
+  if (directBlock) {
+    return directBlock;
+  }
 
-function getTimeBlockAtPoint(x, y) {
+  // 블록과 블록 사이 gap 위에 손가락이 있는 경우도 처리
   const blocks = [
     ...document.querySelectorAll(".time-block")
   ];
 
+  let closestBlock = null;
+  let closestDistance = Infinity;
+
   for (const block of blocks) {
     const rect = block.getBoundingClientRect();
 
-    const gapPadding = 8;
-
-    const insideX =
-      x >= rect.left &&
-      x <= rect.right;
-
-    const insideY =
-      y >= rect.top - gapPadding &&
-      y <= rect.bottom + gapPadding;
-
-    if (insideX && insideY) {
-      return block;
+    // 손가락과 같은 세로 열에 있는 블록만 검사
+    if (
+      x < rect.left ||
+      x > rect.right
+    ) {
+      continue;
     }
+
+    let distance = 0;
+
+    if (y < rect.top) {
+      distance = rect.top - y;
+    } else if (y > rect.bottom) {
+      distance = y - rect.bottom;
+    }
+
+    if (distance < closestDistance) {
+      closestDistance = distance;
+      closestBlock = block;
+    }
+  }
+
+  // 블록 사이 간격에서도 가장 가까운 블록 선택
+  if (closestDistance <= 32) {
+    return closestBlock;
   }
 
   return null;
 }
 
+
+// ================================
+// 모바일 드래그 중
+// ================================
+
 document.addEventListener(
-  "pointermove",
+  "touchmove",
   e => {
     if (!isDragging) return;
 
-    if (
-      activePointerId !== null &&
-      e.pointerId !== activePointerId
-    ) {
-      return;
-    }
+    if (e.touches.length !== 1) return;
 
+    // 페이지 스크롤 대신 시간 선택
     e.preventDefault();
 
-    const block = getTimeBlockAtPoint(
-      e.clientX,
-      e.clientY
+    const touch = e.touches[0];
+
+    const block = getTouchTimeBlock(
+      touch.clientX,
+      touch.clientY
     );
 
     if (!block) return;
 
-    const hour = Number(block.dataset.hour);
+    const hour = Number(
+      block.dataset.hour
+    );
 
     if (Number.isNaN(hour)) return;
 
@@ -905,43 +937,43 @@ document.addEventListener(
   { passive: false }
 );
 
-document.addEventListener("pointerup", e => {
-  if (!isDragging) return;
 
-  if (
-    activePointerId !== null &&
-    e.pointerId !== activePointerId
-  ) {
-    return;
+// ================================
+// 모바일 손가락 뗌
+// ================================
+
+document.addEventListener(
+  "touchend",
+  e => {
+    if (!isDragging) return;
+
+    e.preventDefault();
+
+    suppressMouseUntil = Date.now() + 800;
+
+    finishDrag();
+  },
+  { passive: false }
+);
+
+
+// ================================
+// 모바일 드래그 강제 취소
+// ================================
+
+document.addEventListener(
+  "touchcancel",
+  () => {
+    if (!isDragging) return;
+
+    suppressMouseUntil = Date.now() + 800;
+
+    isDragging = false;
+    dragMode = null;
+
+    clearSelectedBlocks();
   }
-
-  activePointerId = null;
-
-  finishDrag();
-});
-
-document.addEventListener("pointercancel", e => {
-  if (
-    activePointerId !== null &&
-    e.pointerId !== activePointerId
-  ) {
-    return;
-  }
-
-  activePointerId = null;
-  isDragging = false;
-  dragMode = null;
-
-  clearSelectedBlocks();
-});
-
-document.addEventListener("pointercancel", () => {
-  if (!isDragging) return;
-
-  isDragging = false;
-  dragMode = null;
-  clearSelectedBlocks();
-});
+);
 
 async function initializeApp() {
   try {
