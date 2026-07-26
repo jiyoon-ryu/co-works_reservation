@@ -441,6 +441,7 @@ function createTimeBlock(time) {
 
   button.className = "time-block";
   button.dataset.hour = hour;
+  button.type = "button";
 
   const reservation = findReservationByHour(hour);
 
@@ -448,16 +449,9 @@ function createTimeBlock(time) {
     button.classList.add("reserved");
     button.textContent = `${time} 예약됨 / ${maskName(reservation.name)}`;
 
-    button.addEventListener("mousedown", () => {
+    button.addEventListener("pointerdown", e => {
+      e.preventDefault();
       startDrag(hour, "cancel");
-    });
-
-    button.addEventListener("mouseenter", () => {
-      continueDrag(hour);
-    });
-
-    button.addEventListener("mouseup", () => {
-      finishDrag();
     });
 
     return button;
@@ -474,16 +468,9 @@ function createTimeBlock(time) {
 
   button.textContent = `${time} 예약 가능`;
 
-  button.addEventListener("mousedown", () => {
+  button.addEventListener("pointerdown", e => {
+    e.preventDefault();
     startDrag(hour, "reserve");
-  });
-
-  button.addEventListener("mouseenter", () => {
-    continueDrag(hour);
-  });
-
-  button.addEventListener("mouseup", () => {
-    finishDrag();
   });
 
   return button;
