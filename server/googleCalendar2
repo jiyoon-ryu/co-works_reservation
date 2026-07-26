@@ -1,0 +1,37 @@
+const { google } = require('googleapis');
+const path = require('path');
+
+// 1. 서비스 계정 인증 설정
+const auth = new google.auth.GoogleAuth({
+  keyFile: path.join(__dirname, 'service-account-key.json'), // 다운로드받은 JSON 키
+  scopes: ['https://www.googleapis.com/auth/calendar'],
+});
+
+const calendar = google.calendar({ version: 'v3', auth });
+const CALENDAR_ID = 'your_calendar_id@gmail.com'; // 또는 공유한 캘린더 ID
+
+// [기능 1] 예약 생성
+async function createBookingEvent(bookingData) {
+  const event = {
+    summary: `[예약] ${bookingData.userName}`,
+    description: `연락처: ${bookingData.phone}`,
+    start: { dateTime: bookingData.startTime }, // ISO 8601 형식 (e.g. 2026-08-01T10:00:00Z)
+    end: { dateTime: bookingData.endTime },
+  };
+
+  const response = await calendar.events.insert({
+    calendarId: CALENDAR_ID,
+    resource: event,
+  });
+
+  // 반환된 eventId를 DB에 저장해야 취소가 가능합니다.
+  return response.data.id; 
+}
+
+// [기능 2] 예약 취소 (삭제)
+async function cancelBookingEvent(eventId) {
+  await calendar.events.delete({
+    calendarId: CALENDAR_ID,
+    eventId: eventId,
+  });
+}
