@@ -255,6 +255,10 @@ h1 {
   color: #1f2937;
   cursor: pointer;
   font-size: 17px;
+
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
 }
 
 .time-block:hover {
