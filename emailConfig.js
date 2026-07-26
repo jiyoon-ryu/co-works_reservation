@@ -6,6 +6,6 @@
 // 4. 배포 > 새 배포 > 유형: 웹 앱 / 실행 계정: 나 / 액세스 권한: 모든 사용자
 // 5. 배포 후 나오는 웹 앱 URL을 webAppUrl에 붙여넣기
 export const APPS_SCRIPT_CONFIG = {
-  webAppUrl: "https://script.google.com/macros/s/YOUR_DEPLOYMENT_ID/exec",
-  secret: "REPLACE_WITH_A_RANDOM_SECRET"
+  webAppUrl: "https://script.google.com/macros/s/AKfycbycf_ROEn4TBRbm04ZNlQ0Q9nPltg9u2e0mwceDqR4uljpqNNTCpVLdMcvCRBwMgFh6Xw/exec",
+  secret: "0a0c2c2bc2685b20cc8fd7ec1ddde6c3"
 };

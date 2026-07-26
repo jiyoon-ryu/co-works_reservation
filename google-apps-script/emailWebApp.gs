@@ -2,7 +2,7 @@
 // 배포 방법은 emailConfig.js 상단 주석을 참고하세요.
 
 // emailConfig.js의 secret과 반드시 동일한 값으로 바꿔주세요.
-const SHARED_SECRET = "REPLACE_WITH_A_RANDOM_SECRET";
+const SHARED_SECRET = "0a0c2c2bc2685b20cc8fd7ec1ddde6c3";
 
 function doPost(e) {
   try {
