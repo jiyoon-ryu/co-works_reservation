@@ -341,7 +341,8 @@ loginForm.addEventListener("submit", async e => {
   try {
     await signInWithEmailAndPassword(auth, email, password);
   } catch (error) {
-    loginError.textContent = "로그인에 실패했습니다. 이메일/비밀번호를 확인해주세요.";
+    console.error("[admin login]", error.code, error.message);
+    loginError.textContent = `로그인에 실패했습니다. (${error.code || error.message})`;
     loginError.classList.remove("hidden");
   }
 });
