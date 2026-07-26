@@ -13,6 +13,7 @@ import {
   runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { APPS_SCRIPT_CONFIG } from "./emailConfig.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAGnd4rPDvFcBd-RNYSPHj7djKndnsR2rM",
@@ -32,6 +33,31 @@ const ADMIN_EMAILS = [
 const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const db = getFirestore(firebaseApp);
+
+async function callEmailWebApp(payload) {
+  await fetch(APPS_SCRIPT_CONFIG.webAppUrl, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret: APPS_SCRIPT_CONFIG.secret, ...payload })
+  });
+}
+
+async function sendCancellationEmail(details) {
+  try {
+    await callEmailWebApp({
+      type: "reservation_cancelled",
+      to: details.email,
+      name: details.name,
+      studentId: details.studentId,
+      date: details.date,
+      timeRange: details.hoursText,
+      reason: details.reason || "미입력",
+      cancelledBy: details.cancelledBy
+    });
+  } catch (error) {
+    console.error("[cancellation email]", error);
+  }
+}
 
 const loginPage = document.getElementById("loginPage");
 const adminPage = document.getElementById("adminPage");
@@ -311,6 +337,17 @@ cancelModalConfirmBtn.addEventListener("click", async () => {
 
   try {
     await forceCancelReservation(pendingCancelReservation, reason);
+
+    await sendCancellationEmail({
+      email: pendingCancelReservation.email,
+      name: pendingCancelReservation.name,
+      studentId: pendingCancelReservation.studentId,
+      date: pendingCancelReservation.date,
+      hoursText: `${pendingCancelReservation.time} ~ ${pendingCancelReservation.endTime}`,
+      reason,
+      cancelledBy: `관리자 (${auth.currentUser?.email || "unknown"})`
+    });
+
     closeCancelModal();
     await loadReservations();
     renderTable();
