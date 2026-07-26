@@ -52,6 +52,7 @@ let isDragging = false;
 let dragMode = null;
 let dragStartHour = null;
 let dragEndHour = null;
+let activePointerId = null;
 
 let reservations = [];
 
@@ -450,8 +451,12 @@ function createTimeBlock(time) {
     button.textContent = `${time} 예약됨 / ${maskName(reservation.name)}`;
 
     button.addEventListener("pointerdown", e => {
+      if (e.pointerType === "mouse" && e.button !== 0) return;
+
       e.preventDefault();
-      button.setPointerCapture(e.pointerId);
+
+      activePointerId = e.pointerId;
+
       startDrag(hour, "cancel");
     });
 
@@ -470,8 +475,12 @@ function createTimeBlock(time) {
   button.textContent = `${time} 예약 가능`;
 
   button.addEventListener("pointerdown", e => {
+    if (e.pointerType === "mouse" && e.button !== 0) return;
+
     e.preventDefault();
-    button.setPointerCapture(e.pointerId);
+
+    activePointerId = e.pointerId;
+
     startDrag(hour, "reserve");
   });
 
@@ -840,10 +849,90 @@ document.addEventListener(
   { passive: false }
 );
 
-document.addEventListener("pointerup", () => {
-  if (isDragging) {
-    finishDrag();
+function getTimeBlockAtPoint(x, y) {
+  const blocks = [
+    ...document.querySelectorAll(".time-block")
+  ];
+
+  for (const block of blocks) {
+    const rect = block.getBoundingClientRect();
+
+    const gapPadding = 8;
+
+    const insideX =
+      x >= rect.left &&
+      x <= rect.right;
+
+    const insideY =
+      y >= rect.top - gapPadding &&
+      y <= rect.bottom + gapPadding;
+
+    if (insideX && insideY) {
+      return block;
+    }
   }
+
+  return null;
+}
+
+document.addEventListener(
+  "pointermove",
+  e => {
+    if (!isDragging) return;
+
+    if (
+      activePointerId !== null &&
+      e.pointerId !== activePointerId
+    ) {
+      return;
+    }
+
+    e.preventDefault();
+
+    const block = getTimeBlockAtPoint(
+      e.clientX,
+      e.clientY
+    );
+
+    if (!block) return;
+
+    const hour = Number(block.dataset.hour);
+
+    if (Number.isNaN(hour)) return;
+
+    continueDrag(hour);
+  },
+  { passive: false }
+);
+
+document.addEventListener("pointerup", e => {
+  if (!isDragging) return;
+
+  if (
+    activePointerId !== null &&
+    e.pointerId !== activePointerId
+  ) {
+    return;
+  }
+
+  activePointerId = null;
+
+  finishDrag();
+});
+
+document.addEventListener("pointercancel", e => {
+  if (
+    activePointerId !== null &&
+    e.pointerId !== activePointerId
+  ) {
+    return;
+  }
+
+  activePointerId = null;
+  isDragging = false;
+  dragMode = null;
+
+  clearSelectedBlocks();
 });
 
 document.addEventListener("pointercancel", () => {
