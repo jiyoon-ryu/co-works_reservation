@@ -451,6 +451,7 @@ function createTimeBlock(time) {
 
     button.addEventListener("pointerdown", e => {
       e.preventDefault();
+      button.setPointerCapture(e.pointerId);
       startDrag(hour, "cancel");
     });
 
@@ -470,6 +471,7 @@ function createTimeBlock(time) {
 
   button.addEventListener("pointerdown", e => {
     e.preventDefault();
+    button.setPointerCapture(e.pointerId);
     startDrag(hour, "reserve");
   });
 
@@ -813,10 +815,43 @@ nextMonthBtn.addEventListener("click", () => {
   renderCalendar();
 });
 
-document.addEventListener("mouseup", () => {
+document.addEventListener(
+  "pointermove",
+  e => {
+    if (!isDragging) return;
+
+    e.preventDefault();
+
+    const element = document.elementFromPoint(
+      e.clientX,
+      e.clientY
+    );
+
+    const block = element?.closest(".time-block");
+
+    if(!block) return;
+
+    const hour = Number(block.dataset.hour);
+
+    if(Number.isNaN(hour)) return;
+
+    continueDrag(hour);
+  },
+  { passive: false }
+);
+
+document.addEventListener("pointerup", () => {
   if (isDragging) {
     finishDrag();
   }
+});
+
+document.addEventListener("pointercancel", () => {
+  if (!isDragging) return;
+
+  isDragging = false;
+  dragMode = null;
+  clearSelectedBlocks();
 });
 
 async function initializeApp() {
