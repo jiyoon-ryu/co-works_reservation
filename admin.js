@@ -152,13 +152,13 @@ function renderStats(list) {
   listLabel.className = "stat-label";
   listLabel.textContent = "최근 날짜별 예약 수";
 
-  const list = document.createElement("ul");
-  list.className = "stat-date-list";
+  const dateList = document.createElement("ul");
+  dateList.className = "stat-date-list";
 
   if (topDates.length === 0) {
     const emptyItem = document.createElement("li");
     emptyItem.textContent = "예약 없음";
-    list.appendChild(emptyItem);
+    dateList.appendChild(emptyItem);
   } else {
     topDates.forEach(([date, count]) => {
       const item = document.createElement("li");
@@ -170,11 +170,11 @@ function renderStats(list) {
       countSpan.textContent = `${count}건`;
 
       item.append(dateSpan, countSpan);
-      list.appendChild(item);
+      dateList.appendChild(item);
     });
   }
 
-  listCard.append(listLabel, list);
+  listCard.append(listLabel, dateList);
   adminStats.appendChild(listCard);
 }
 
