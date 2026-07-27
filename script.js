@@ -219,7 +219,7 @@ async function createReservation(data) {
       const slotSnapshot = await transaction.get(slotRef);
 
       if (slotSnapshot.exists()) {
-        throw new Error("?대? ?덉빟???쒓컙???ы븿?섏뼱 ?덉뒿?덈떎.");
+        throw new Error("이미 예약된 시간이 포함되어 있습니다.");
       }
     }
 
