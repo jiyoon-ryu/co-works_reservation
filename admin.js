@@ -27,7 +27,8 @@ const firebaseConfig = {
 
 // 관리자로 지정할 이메일을 여기에 추가하세요. firestore.rules의 isAdmin() 목록과 동일하게 유지해야 합니다.
 const ADMIN_EMAILS = [
-  "jiyoon01746@gmail.com"
+  "jiyoon01746@gmail.com",
+  "kusis.midnight@gmail.com"
 ];
 
 const firebaseApp = initializeApp(firebaseConfig);
