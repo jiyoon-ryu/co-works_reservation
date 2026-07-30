@@ -7,6 +7,7 @@ import {
   runTransaction,
   serverTimestamp
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
+import { APPS_SCRIPT_CONFIG } from "./emailConfig.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAGnd4rPDvFcBd-RNYSPHj7djKndnsR2rM",
@@ -20,6 +21,72 @@ const firebaseConfig = {
 
 const firebaseApp = initializeFirebaseApp(firebaseConfig);
 const db = getFirestore(firebaseApp);
+
+async function callEmailWebApp(payload) {
+  await fetch(APPS_SCRIPT_CONFIG.webAppUrl, {
+    method: "POST",
+    headers: { "Content-Type": "text/plain;charset=utf-8" },
+    body: JSON.stringify({ secret: APPS_SCRIPT_CONFIG.secret, ...payload })
+  });
+}
+
+async function sendReservationEmail(reservation) {
+  try {
+    await callEmailWebApp({
+      type: "reservation_confirmed",
+      to: reservation.email,
+      name: reservation.name,
+      studentId: reservation.studentId,
+      date: reservation.date,
+      timeRange: `${reservation.time} ~ ${reservation.endTime}`,
+      purpose: reservation.purpose
+    });
+  } catch (error) {
+    console.error("[reservation email]", error);
+  }
+}
+
+async function sendCancellationEmail(details) {
+  try {
+    await callEmailWebApp({
+      type: "reservation_cancelled",
+      to: details.email,
+      name: details.name,
+      studentId: details.studentId,
+      date: details.date,
+      timeRange: details.hoursText,
+      reason: details.reason || "미입력",
+      cancelledBy: details.cancelledBy
+    });
+  } catch (error) {
+    console.error("[cancellation email]", error);
+  }
+}
+
+function formatHourRanges(hours) {
+  const sorted = [...hours].sort((a, b) => a - b);
+  const ranges = [];
+  let rangeStart = null;
+  let prev = null;
+
+  sorted.forEach(hour => {
+    if (rangeStart === null) {
+      rangeStart = hour;
+    } else if (hour !== prev + 1) {
+      ranges.push([rangeStart, prev]);
+      rangeStart = hour;
+    }
+    prev = hour;
+  });
+
+  if (rangeStart !== null) {
+    ranges.push([rangeStart, prev]);
+  }
+
+  return ranges
+    .map(([start, end]) => `${makeHourTime(start)} ~ ${makeHourTime(end + 1)}`)
+    .join(", ");
+}
 
 const calendarPage = document.getElementById("calendarPage");
 const timePage = document.getElementById("timePage");
@@ -102,6 +169,33 @@ async function refreshReservationViews() {
   }
 }
 
+async function syncCalendarForDate(date) {
+  if (!date) return;
+
+  try {
+    const dailyReservations = reservations
+      .filter(reservation => reservation.date === date)
+      .map(reservation => ({
+        id: reservation.id,
+        date: reservation.date,
+        time: reservation.time,
+        endTime: reservation.endTime,
+        studentId: reservation.studentId,
+        name: reservation.name,
+        email: reservation.email,
+        purpose: reservation.purpose
+      }));
+
+    await callEmailWebApp({
+      type: "calendar_sync_date",
+      date,
+      reservations: dailyReservations
+    });
+  } catch (error) {
+    console.error("[calendar sync]", error);
+  }
+}
+
 function makeDateString(year, month, date) {
   return `${year}-${String(month + 1).padStart(2, "0")}-${String(date).padStart(2, "0")}`;
 }
@@ -151,7 +245,7 @@ async function createReservation(data) {
       const slotSnapshot = await transaction.get(slotRef);
 
       if (slotSnapshot.exists()) {
-        throw new Error("?대? ?덉빟???쒓컙???ы븿?섏뼱 ?덉뒿?덈떎.");
+        throw new Error("이미 예약된 시간이 포함되어 있습니다.");
       }
     }
 
@@ -167,6 +261,8 @@ async function createReservation(data) {
       });
     });
   });
+
+  return reservationRef.id;
 }
 
 async function cancelReservationsBySelectedHours(
@@ -580,9 +676,12 @@ function getCancelCredentials() {
 
   if (cancelPassword === null) return null;
 
+  const cancelReason = prompt("취소 사유를 입력해주세요. (선택 사항)");
+
   return {
     studentId: studentId.trim(),
-    cancelPassword: cancelPassword.trim()
+    cancelPassword: cancelPassword.trim(),
+    cancelReason: (cancelReason || "").trim()
   };
 }
 
@@ -642,8 +741,27 @@ async function cancelSelectedReservationHours() {
       hours,
       credentials
     );
-    
+
+    await Promise.all(
+      cancelReservations.map(reservation => {
+        const start = Number(reservation.time.slice(0, 2));
+        const end = Number(reservation.endTime.slice(0, 2));
+        const reservationHours = hours.filter(hour => hour >= start && hour < end);
+
+        return sendCancellationEmail({
+          email: reservation.email,
+          name: reservation.name,
+          studentId: reservation.studentId,
+          date: reservation.date,
+          hoursText: formatHourRanges(reservationHours),
+          reason: credentials.cancelReason,
+          cancelledBy: "예약자 본인"
+        });
+      })
+    );
+
     await refreshReservationViews();
+    await syncCalendarForDate(selectedDate);
   } catch (error) {
     alert(error.message);
     clearSelectedBlocks();
@@ -770,6 +888,8 @@ reservationForm.addEventListener("submit", async e => {
   }
 
   try {
+    const email = `${emailId}@gmail.com`;
+
     await createReservation({
       date: selectedDate,
       time: selectedStartTime,
@@ -777,7 +897,17 @@ reservationForm.addEventListener("submit", async e => {
       studentId,
       passwordHash: await hashPassword(cancelPassword),
       name: studentName,
-      email: `${emailId}@gmail.com`,
+      email,
+      purpose
+    });
+
+    await sendReservationEmail({
+      date: selectedDate,
+      time: selectedStartTime,
+      endTime: selectedEndTime,
+      studentId,
+      name: studentName,
+      email,
       purpose
     });
 
@@ -788,6 +918,7 @@ reservationForm.addEventListener("submit", async e => {
     clearSelectedBlocks();
 
     await refreshReservationViews();
+    await syncCalendarForDate(selectedDate);
   } catch (error) {
     alert(error.message);
   }
