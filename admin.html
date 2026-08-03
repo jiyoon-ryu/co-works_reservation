@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>코웍스 관리자 페이지</title>
+  <link rel="stylesheet" href="style.css" />
+  <link rel="stylesheet" href="admin.css" />
+</head>
+<body>
+  <main class="app">
+
+    <section id="loginPage" class="page active">
+      <div class="card admin-login-card">
+        <h1>관리자 로그인</h1>
+
+        <form id="loginForm" class="login-form">
+          <label>이메일</label>
+          <input id="loginEmail" type="email" required />
+
+          <label>비밀번호</label>
+          <input id="loginPassword" type="password" required />
+
+          <p id="loginError" class="error-text hidden"></p>
+
+          <div class="btn-row">
+            <button type="submit">로그인</button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <section id="adminPage" class="page">
+      <div class="card wide admin-card">
+        <div class="admin-header">
+          <h1>관리자 페이지</h1>
+
+          <div class="admin-header-right">
+            <span id="adminEmailText" class="admin-email-text"></span>
+            <button id="logoutBtn" type="button" class="back-btn">로그아웃</button>
+          </div>
+        </div>
+
+        <div id="adminStats" class="admin-stats"></div>
+
+        <div class="admin-filters">
+          <div class="admin-filter-field">
+            <label>날짜</label>
+            <input id="filterDate" type="date" />
+          </div>
+
+          <div class="admin-filter-field">
+            <label>이름</label>
+            <input id="filterName" type="text" placeholder="이름 검색" />
+          </div>
+
+          <div class="admin-filter-field">
+            <label>학번</label>
+            <input id="filterStudentId" type="text" placeholder="학번 검색" />
+          </div>
+
+          <button id="filterResetBtn" type="button" class="back-btn admin-filter-reset">필터 초기화</button>
+        </div>
+
+        <div class="admin-table-wrap">
+          <table class="admin-table">
+            <thead>
+              <tr>
+                <th>날짜</th>
+                <th>시간</th>
+                <th>학번</th>
+                <th>이름</th>
+                <th>이메일</th>
+                <th>이용 목적</th>
+                <th>예약일시</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="adminTableBody"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+
+    <div id="cancelModal" class="modal hidden">
+      <div class="modal-box">
+        <h2>예약 강제 취소</h2>
+
+        <p id="cancelModalText" class="selected-time"></p>
+
+        <label>취소 사유</label>
+        <textarea id="cancelReason" placeholder="취소 사유를 입력하세요" required></textarea>
+
+        <div class="btn-row">
+          <button type="button" id="cancelModalCancelBtn" class="cancel">닫기</button>
+          <button type="button" id="cancelModalConfirmBtn">강제 취소</button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <script type="module" src="admin.js?v=20260727"></script>
+</body>
+</html>
