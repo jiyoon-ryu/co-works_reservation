@@ -30,6 +30,24 @@ async function callEmailWebApp(payload) {
   });
 }
 
+async function callCalendarWebApp(payload) {
+  if (!APPS_SCRIPT_CONFIG.calendarWebAppUrl) {
+    console.warn("Calendar Apps Script URL이 설정되지 않았습니다.");
+    return;
+  }
+
+  await fetch(APPS_SCRIPT_CONFIG.calendarWebAppUrl, {
+    method: "POST",
+    headers: {
+      "Content-Type": "text/plain;charset=utf-8"
+    },
+    body: JSON.stringify({
+      secret: APPS_SCRIPT_CONFIG.calendarSecret,
+      ...payload
+    })
+  });
+}
+
 async function sendReservationEmail(reservation) {
   try {
     await callEmailWebApp({
@@ -167,6 +185,33 @@ async function refreshReservationViews() {
 
   if (selectedDate) {
     renderTimeBlocks();
+  }
+}
+
+async function syncCalendarForDate(date) {
+  if (!date) return;
+
+  try {
+    const dailyReservations = reservations
+      .filter(reservation => reservation.date === date)
+      .map(reservation => ({
+        id: reservation.id,
+        date: reservation.date,
+        time: reservation.time,
+        endTime: reservation.endTime,
+        studentId: reservation.studentId,
+        name: reservation.name,
+        email: reservation.email,
+        purpose: reservation.purpose
+      }));
+
+    await callCalendarWebApp({
+      type: "calendar_sync_date",
+      date,
+      reservations: dailyReservations
+    });
+  } catch (error) {
+    console.error("[calendar sync]", error);
   }
 }
 
@@ -740,6 +785,7 @@ async function cancelSelectedReservationHours() {
     );
 
     await refreshReservationViews();
+    await syncCalendarForDate(selectedDate);
   } catch (error) {
     alert(error.message);
     clearSelectedBlocks();
@@ -896,6 +942,7 @@ reservationForm.addEventListener("submit", async e => {
     clearSelectedBlocks();
 
     await refreshReservationViews();
+    await syncCalendarForDate(selectedDate);
   } catch (error) {
     alert(error.message);
   }
