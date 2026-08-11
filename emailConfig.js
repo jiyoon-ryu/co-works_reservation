@@ -9,6 +9,6 @@ export const APPS_SCRIPT_CONFIG = {
   webAppUrl: "https://script.google.com/macros/s/AKfycbycf_ROEn4TBRbm04ZNlQ0Q9nPltg9u2e0mwceDqR4uljpqNNTCpVLdMcvCRBwMgFh6Xw/exec",
   secret: "0a0c2c2bc2685b20cc8fd7ec1ddde6c3"
 
-  calendarWebAppUrl: "https://script.google.com/macros/s/AKfycbxE_FN_pQTRUXwzVkNKNmVeC2r7WMDm2gocQE1omD14UixTw3gVYu_Lry5ve7ONrDo/exec"
+  calendarWebAppUrl: "https://script.google.com/macros/s/AKfycbxE_FN_pQTRUXwzVkNKNmVeC2r7WMDm2gocQE1omD14UixTw3gVYu_Lry5ve7ONrDo/exec",
   calendarSecret: "b39b83b7d99569a461c3b509adacca868c08bd166324302a"
 };
