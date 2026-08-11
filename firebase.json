@@ -10,6 +10,7 @@
       "**/node_modules/**",
       "functions/**",
       "server/**",
+      "google-apps-script/**",
       "README.md"
     ]
   }
